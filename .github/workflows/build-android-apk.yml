@@ -11,7 +11,11 @@ name: Build Android APK
 # installed on the phone and it updates in place. Without those secrets it falls
 # back to a DEBUG apk (package com.smarttalk.app.debug, debug key) so the
 # workflow is never broken by a missing secret. A debug build is a SEPARATE app
-# and will not update the release install.
+# and will not update a release install.
+#
+# Note: no third-party Android setup action is used. The ubuntu-latest image
+# already ships the Android SDK and cmdline-tools, and build-tools are addressed
+# by absolute path because their bin directory is not guaranteed to be on PATH.
 
 on:
   push:
@@ -20,6 +24,10 @@ on:
       - 'android/**'
       - '.github/workflows/build-android-apk.yml'
   workflow_dispatch:
+
+env:
+  BUILD_TOOLS_VERSION: '35.0.0'
+  PLATFORM_VERSION: 'android-35'
 
 jobs:
   build:
@@ -38,11 +46,41 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Show what the runner already provides
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
+          echo "--- top level ---"
+          ls "${ANDROID_HOME}" 2>&1 || true
+          echo "--- platforms ---"
+          ls "${ANDROID_HOME}/platforms" 2>&1 || true
+          echo "--- build-tools ---"
+          ls "${ANDROID_HOME}/build-tools" 2>&1 || true
+          echo "--- cmdline-tools ---"
+          ls "${ANDROID_HOME}/cmdline-tools" 2>&1 || true
+          echo "--- java ---"
+          java -version 2>&1 || true
 
       - name: Install the pinned SDK components
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+        run: |
+          if [ -z "${ANDROID_HOME}" ]; then
+            echo "::error::ANDROID_HOME is not set on this runner."
+            exit 1
+          fi
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under ${ANDROID_HOME}/cmdline-tools"
+            find "${ANDROID_HOME}/cmdline-tools" -maxdepth 3 2>&1 || true
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;${PLATFORM_VERSION}" "build-tools;${BUILD_TOOLS_VERSION}" "platform-tools"
+          echo "--- installed build-tools ---"
+          ls "${ANDROID_HOME}/build-tools"
 
       - name: Restore the release keystore (only if the secrets exist)
         id: keystore
@@ -80,12 +118,13 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Fail if no APK was produced
+      - name: Locate the APK
         run: |
           set -e
           APK=$(find app/build/outputs/apk -name '*.apk' | head -n 1)
           if [ -z "$APK" ]; then
             echo "::error::No APK was produced."
+            find app/build/outputs -maxdepth 4 2>&1 || true
             exit 1
           fi
           echo "APK=$APK" >> "$GITHUB_ENV"
@@ -94,13 +133,18 @@ jobs:
       - name: Verify the signature and print the certificate
         run: |
           set -e
-          apksigner verify --verbose --print-certs "$APK"
-          echo "Certificate SHA-256 must match the frozen keystore:"
+          APKSIGNER="${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}/apksigner"
+          chmod +x "$APKSIGNER" 2>/dev/null || true
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          echo ""
+          echo "The certificate SHA-256 above must equal the frozen keystore's:"
           echo "  446547CCC59207D6E7A80A292218E772DEEBEF53D6524672AF9ED13ADABBC2F1"
 
       - name: Dump the manifest
         run: |
-          aapt dump badging "$APK" | grep -E '^package:|^sdkVersion:|^targetSdkVersion:|^native-code'
+          set -e
+          AAPT="${ANDROID_HOME}/build-tools/${BUILD_TOOLS_VERSION}/aapt"
+          "$AAPT" dump badging "$APK" | grep -E '^package:|^sdkVersion:|^targetSdkVersion:|^native-code'
 
       - name: Publish the checksum
         run: sha256sum "$APK" | tee checksum.txt
