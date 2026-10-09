@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SmartTalk</string>
+
+    <string name="chat_title">SmartTalk</string>
+    <string name="settings_title">Settings</string>
+
+    <string name="input_hint">Ask SmartTalk anything</string>
+    <string name="send">Send message</string>
+    <string name="stop">Stop generating</string>
+    <string name="new_chat">New chat</string>
+    <string name="open_settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="voice_input">Speak your message</string>
+    <string name="voice_listening">Listening. Speak now.</string>
+    <string name="copy_message">Copy message</string>
+    <string name="delete_message">Delete message</string>
+    <string name="regenerate">Regenerate answer</string>
+
+    <string name="empty_state_title">SmartTalk</string>
+    <string name="empty_state_body">Your conversational AI assistant. Type a question below, or use the voice button to speak it.</string>
+
+    <string name="thinking">SmartTalk is thinking</string>
+    <string name="searching">Searching the web</string>
+
+    <string name="settings_provider">Provider</string>
+    <string name="settings_base_url">API base URL</string>
+    <string name="settings_api_key">API key</string>
+    <string name="settings_model">Model</string>
+    <string name="settings_max_tokens">Max response tokens</string>
+    <string name="settings_temperature">Temperature</string>
+    <string name="settings_system_prompt">System prompt</string>
+    <string name="settings_web_search">Ground answers with web search</string>
+    <string name="settings_dark_theme">Dark theme</string>
+    <string name="settings_save">Save settings</string>
+    <string name="settings_saved">Settings saved</string>
+    <string name="settings_privacy_note">Your API key is stored only on this device, in this app\'s private storage. It is never uploaded anywhere except to the provider you choose.</string>
+
+    <string name="error_no_api_key">No API key set for this provider. Open Settings and add one.</string>
+    <string name="error_network">Could not reach the provider. Check your internet connection and the API base URL.</string>
+</resources>

@@ -1,0 +1,172 @@
+SMARTTALK — PROPRIETARY COMMERCIAL SOFTWARE LICENCE
+==================================================
+
+Copyright (c) 2026 Akankwatsa Andrew OBA. All rights reserved.
+
+Application : SmartTalk (Android edition)
+Package     : com.smarttalk.app
+Licence     : Commercial, proprietary. Licensed, not sold.
+Version     : 1.0.0
+
+--------------------------------------------------------------------------------
+1. THIS IS NOT FREE OR OPEN-SOURCE SOFTWARE
+--------------------------------------------------------------------------------
+
+SmartTalk is commercial, proprietary software. It is licensed to you, not sold
+to you. The copyright holder retains all right, title and interest in and to the
+software, including all intellectual property rights.
+
+No licence is granted to you except the limited, revocable, non-exclusive,
+non-transferable right to install and use one copy of the software on a device
+that you own or control, for its intended purpose as a conversational AI client.
+
+--------------------------------------------------------------------------------
+2. PRIOR WRITTEN PERMISSION IS REQUIRED
+--------------------------------------------------------------------------------
+
+You must obtain the prior written permission of the copyright holder before
+doing ANY of the following. Absence of a reply is not permission.
+
+  (a) REVERSE ENGINEERING. You may not reverse engineer, decompile,
+      disassemble, de-obfuscate, or otherwise attempt to derive the source
+      code, underlying algorithms, architecture, file formats, network
+      protocols or internal logic of the software, in whole or in part.
+
+  (b) RESALE AND COMMERCIAL EXPLOITATION. You may not sell, resell, rent,
+      lease, sublicense, lend, host as a service, or otherwise commercially
+      exploit the software or any derivative of it, whether for money or
+      anything else of value.
+
+  (c) REDISTRIBUTION. You may not redistribute, publish, upload, mirror,
+      bundle, or otherwise make the software or its installation package
+      available to any third party, on any app store, marketplace, website,
+      file-sharing service, or physical medium.
+
+  (d) MODIFICATION. You may not modify, adapt, translate, or create derivative
+      works based on the software.
+
+  (e) REMOVAL OF NOTICES. You may not remove, obscure, or alter any copyright
+      notice, licence notice, attribution, or version identifier in the
+      software, its user interface, or its documentation.
+
+  (f) CIRCUMVENTION. You may not defeat, bypass or interfere with any licence
+      check, authentication mechanism, rate limit, usage restriction, or other
+      technical protection measure in the software.
+
+  (g) TRADEMARK USE. You may not use the name "SmartTalk", its icon, or any
+      confusingly similar mark, to endorse or promote a product or service
+      without prior written permission.
+
+To request permission for any of the above, contact the copyright holder and
+state precisely what you intend to do, why, and on what commercial terms.
+
+--------------------------------------------------------------------------------
+3. WHAT THIS LICENCE DOES NOT RESTRICT
+--------------------------------------------------------------------------------
+
+Nothing in this licence restricts any right you may have under an applicable
+statute that cannot lawfully be excluded, including rights of fair use or fair
+dealing that your local law grants, and rights relating to interoperability
+that your local law makes mandatory. Where such a right applies, it prevails
+over any conflicting term above, but only to the extent the law requires.
+
+--------------------------------------------------------------------------------
+4. YOUR CONTENT AND YOUR API KEYS
+--------------------------------------------------------------------------------
+
+Conversations, prompts, uploaded text and API keys belong to you. SmartTalk
+stores them only in the application's private storage on your device. The
+software transmits a request to whichever AI provider you configure, using the
+API key you supply, and its contents are governed by that provider's own terms.
+The copyright holder does not receive, collect, or have access to your keys or
+your conversations.
+
+You are solely responsible for the API keys you enter, for the costs your
+provider charges you, and for complying with your provider's terms of service.
+
+--------------------------------------------------------------------------------
+5. AI OUTPUT — NO WARRANTY OF ACCURACY
+--------------------------------------------------------------------------------
+
+SmartTalk is a client for third-party artificial-intelligence models. Such
+models can produce output that is inaccurate, incomplete, outdated, offensive,
+or wholly fabricated. The copyright holder does not control, verify, or endorse
+any model output.
+
+You must not rely on output from this software as legal, medical, financial,
+security, or other professional advice, and you must independently verify
+anything you intend to act upon.
+
+--------------------------------------------------------------------------------
+6. NO WARRANTY
+--------------------------------------------------------------------------------
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. THE ENTIRE RISK
+ARISING OUT OF THE USE OR PERFORMANCE OF THE SOFTWARE REMAINS WITH YOU.
+
+--------------------------------------------------------------------------------
+7. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+GOODS OR SERVICES; LOSS OF DATA, CONVERSATIONS, OR API CREDITS; LOSS OF PROFITS
+OR REVENUE; BUSINESS INTERRUPTION; OR COSTS OF UNINTENDED PROVIDER CHARGES)
+HOWSOEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+LIABILITY, OR TORT, ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+8. TERMINATION
+--------------------------------------------------------------------------------
+
+This licence terminates automatically and immediately if you breach any term of
+it. On termination you must stop all use of the software and delete every copy
+you hold. Sections 2, 6, 7 and 9 survive termination.
+
+--------------------------------------------------------------------------------
+9. GOVERNING LAW
+--------------------------------------------------------------------------------
+
+This licence is governed by the laws of the Republic of Uganda, without regard
+to its conflict-of-law rules. The courts of Uganda have exclusive jurisdiction
+over any dispute arising under it, without prejudice to any right the copyright
+holder may have to seek relief in any other competent jurisdiction.
+
+--------------------------------------------------------------------------------
+10. THIRD-PARTY COMPONENTS
+--------------------------------------------------------------------------------
+
+The software includes third-party libraries, each governed by its own licence,
+which applies to that component and prevails over this licence where they
+conflict. Those components are:
+
+  - AndroidX / Jetpack Compose (Apache Licence 2.0)
+  - Kotlin standard library and coroutines (Apache Licence 2.0)
+  - OkHttp and Okio, by Square, Inc. (Apache Licence 2.0)
+
+Those licences grant rights in respect of those components only. They grant no
+right whatsoever in respect of SmartTalk's own code, design, or branding.
+
+--------------------------------------------------------------------------------
+11. ACCEPTANCE
+--------------------------------------------------------------------------------
+
+By installing, copying, or using this software you accept every term of this
+licence. If you do not accept them, do not install or use the software, and
+delete any copy you hold.
+
+--------------------------------------------------------------------------------
+CONTACT — PERMISSIONS, LICENSING AND COMMERCIAL ENQUIRIES
+--------------------------------------------------------------------------------
+
+  Copyright holder : Akankwatsa Andrew OBA
+  Project          : SmartTalk
+  Repository       : https://github.com/akankwatsa1/smart-talk
+  Website          : https://www.remedialcorner.com
+
+Written permission requests must state the intended use, the intended audience,
+the commercial terms proposed, and the territory concerned.

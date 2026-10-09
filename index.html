@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartTalk - Conversational AI</title>
+  <link rel="stylesheet" href="styles.css?v=4.1">
+  <!-- Markdown Parser, Syntax Highlighter, KaTeX Math Renderers -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <!-- PDF.js for client-side PDF document parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+  <!-- Tesseract.js for client-side WebAssembly OCR on scanned documents and images -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body data-theme="dark">
+  <!-- WCAG 2.1 AA Compliant Live Announcer for screen readers -->
+  <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Toast Notification Box -->
+  <div id="app-toast" class="app-toast" role="status" aria-live="polite"></div>
+
+  <!-- Drag & Drop Overlay -->
+  <div id="drag-overlay" class="drag-overlay" aria-hidden="true">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    <div class="drag-overlay-text">Drop files here to attach to SmartTalk</div>
+  </div>
+
+  <div class="app-container">
+    <!-- Left Drawer / Sidebar -->
+    <nav class="sidebar" id="sidebar" aria-label="Chat history">
+      <div class="sidebar-header">
+        <div class="app-branding">
+          <div class="app-logo" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+            </svg>
+          </div>
+          <span>SmartTalk</span>
+        </div>
+        <button id="btn-sidebar-collapse" class="icon-btn" aria-label="Collapse sidebar" title="Collapse sidebar (Alt+B)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="18" height="18" x="3" y="3" rx="2"/>
+            <path d="M9 3v18"/>
+            <path d="m14 9-3 3 3 3"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- New Chat Button -->
+      <button id="btn-new-chat" class="btn-new-chat" accesskey="n" aria-label="Start new chat (Alt+N)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <span>New chat</span>
+      </button>
+
+      <!-- Search Filter -->
+      <form class="sidebar-search-box" role="search" onsubmit="event.preventDefault();">
+        <svg class="sidebar-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.3-4.3"/>
+        </svg>
+        <input type="search" id="chat-search-input" placeholder="Search conversations..." aria-label="Search conversations">
+      </form>
+
+      <!-- Recency-grouped Saved Chat List -->
+      <div class="sidebar-chat-list" id="sidebar-chat-list" role="list">
+        <!-- Injected dynamically: Today, Previous 7 Days, Older -->
+      </div>
+
+      <!-- Sidebar Footer -->
+      <div class="sidebar-footer">
+        <button id="btn-open-settings" class="footer-btn" accesskey="s" aria-label="Open settings (Alt+S)" title="Settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Settings</span>
+        </button>
+
+        <button id="btn-theme-toggle" class="icon-btn" aria-label="Toggle light and dark theme" title="Toggle theme">
+          <svg id="theme-icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+          </svg>
+          <svg id="theme-icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Main Canvas Area -->
+    <main class="main-canvas" id="main-canvas">
+      <!-- App Header Bar -->
+      <header class="app-header">
+        <div class="header-left">
+          <button id="btn-sidebar-expand" class="icon-btn" aria-label="Expand sidebar" title="Expand sidebar (Alt+B)" style="display: none;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="18" height="18" x="3" y="3" rx="2"/>
+              <path d="M9 3v18"/>
+              <path d="m14 15 3-3-3-3"/>
+            </svg>
+          </button>
+          <div class="model-pill-selector" id="btn-model-menu" role="button" tabindex="0" aria-label="Select Model and Settings">
+            <span class="model-name" id="header-model-name">DeepSeek Chat (V3)</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="header-right">
+          <!-- Token Meter Badge -->
+          <div class="token-meter-badge" id="token-meter-badge" title="Estimated Context Token Usage">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 14 14"/>
+            </svg>
+            <span id="token-count-display">0 tokens</span>
+          </div>
+
+          <button id="btn-clear-chat" class="icon-btn" aria-label="Clear active conversation (Alt+C)" title="Clear chat (Alt+C)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
+          <button id="btn-export-chat" class="icon-btn" aria-label="Export chat as Markdown" title="Export as Markdown">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Chat Thread Container -->
+      <section class="chat-thread-container" id="chat-thread" aria-live="polite">
+        <div class="chat-messages-inner" id="chat-messages-inner">
+          <!-- Welcome Hero Screen (Gemini aesthetic) -->
+          <div class="welcome-hero" id="welcome-hero">
+            <div class="hero-sparkle" aria-hidden="true">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+              </svg>
+            </div>
+            <h1 class="hero-title"><span class="gradient-text">Hello there</span></h1>
+            <p class="hero-subtitle">How can I help you today? Choose a suggestion below or type anything.</p>
+
+            <div class="suggestion-cards-grid">
+              <button class="suggestion-card" data-prompt="Explain quantum computing principles with analogies">
+                <span class="card-text">Explain quantum computing principles with analogies</span>
+                <span class="card-icon">💡</span>
+              </button>
+              <button class="suggestion-card" data-prompt="Analyze this code for memory bottlenecks and provide optimizations">
+                <span class="card-text">Analyze code for bottlenecks and provide optimizations</span>
+                <span class="card-icon">⚡</span>
+              </button>
+              <button class="suggestion-card" data-prompt="Draft a clean executive summary comparing system architectures">
+                <span class="card-text">Draft a clean executive summary comparing system architectures</span>
+                <span class="card-icon">📝</span>
+              </button>
+              <button class="suggestion-card" data-prompt="Help me write tests for an async queue processing service">
+                <span class="card-text">Help me write tests for an async queue processing service</span>
+                <span class="card-icon">🧪</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Floating Gemini Prompt Pill Wrapper -->
+      <div class="bottom-prompt-wrapper">
+        <div class="prompt-pill-container" id="prompt-pill">
+          <!-- Attached Files Chips Bar -->
+          <div class="prompt-chips-bar" id="prompt-chips-bar"></div>
+
+          <!-- Voice Input Status & Live Spoken Words Feedback -->
+          <div class="voice-status-bar" id="voice-status-bar" style="display: none;" role="status" aria-live="polite">
+            <div class="voice-status-wave" aria-hidden="true">
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+              <span class="wave-bar"></span>
+            </div>
+            <div class="voice-status-text" id="voice-status-text">
+              <span class="voice-status-label" id="voice-status-label">Listening...</span>
+              <span class="voice-status-transcript" id="voice-status-transcript">Speak now...</span>
+            </div>
+            <button type="button" class="voice-status-stop-btn" id="btn-voice-stop" aria-label="Finish voice recording">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <rect width="18" height="18" x="3" y="3" rx="2"/>
+              </svg>
+              <span>Done</span>
+            </button>
+          </div>
+
+          <!-- Prompt Input Row -->
+          <div class="prompt-input-row">
+            <input type="file" id="file-input" style="display: none;" multiple accept=".txt,.md,.py,.js,.html,.css,.json,.csv,.docx,.pdf,.png,.jpg,.jpeg,.webp,.bmp">
+            <button id="btn-attach" class="pill-btn" aria-label="Attach documents, scanned PDFs, or images" title="Attach file (PDFs, Scanned Documents, Images, Code, Text)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            </button>
+
+            <button id="btn-web-search" class="pill-btn btn-search-toggle" aria-label="Toggle Online Web Search (Alt+W)" title="Search the web for real-time and current information (Alt+W)" aria-pressed="false">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="2" y1="12" x2="22" y2="12"/>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+            </button>
+
+            <button id="btn-voice-input" class="pill-btn btn-voice" aria-label="Voice input: Speak your prompt (Alt+M)" title="Voice input: Speak your prompt (Alt+M)">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+
+            <textarea
+              id="prompt-input"
+              class="prompt-textarea"
+              placeholder="Ask SmartTalk anything, speak with mic, or attach documents..."
+              rows="1"
+              aria-label="Ask SmartTalk prompt input"
+              autocomplete="off"
+            ></textarea>
+
+            <button id="btn-send" class="pill-btn btn-send" aria-label="Send prompt" title="Send (Enter)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m5 12 7-7 7 7"/>
+                <path d="M12 19V5"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Prompt Footer Info -->
+          <div class="prompt-footer-bar">
+            <span>SmartTalk may make mistakes. Verify important facts.</span>
+            <div class="token-window-indicator" title="Sliding-window context occupancy">
+              <div class="token-indicator-fill" id="token-indicator-fill"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Settings Modal Dialog -->
+  <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title" id="settings-modal-title">SmartTalk Settings</h2>
+        <button class="icon-btn modal-close-btn" id="btn-close-settings" aria-label="Close settings" onclick="window.smartTalk ? window.smartTalk.closeSettingsModal() : (function(){ var m = document.getElementById('settings-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Status alert box for connection test results -->
+        <div id="connection-status-box" style="display: none; padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; font-weight: 500;"></div>
+
+        <!-- Saved Provider Accounts Quick Switcher -->
+        <div class="saved-accounts-wrapper" id="saved-accounts-wrapper">
+          <div class="saved-accounts-header">
+            <span class="saved-accounts-title">Saved Provider Logins &amp; Credentials</span>
+            <span class="saved-accounts-counter" id="saved-accounts-counter">0 configured</span>
+          </div>
+          <div class="saved-accounts-chips" id="saved-accounts-chips" role="group" aria-label="Quick select saved provider"></div>
+          <small style="display: block; margin-top: 6px; color: var(--text-tertiary); font-size: 0.76rem;">Select any provider to instantly load its stored API key and endpoints without re-entering credentials.</small>
+        </div>
+
+        <!-- Provider Selection -->
+        <div class="form-group">
+          <label for="setting-provider">AI Provider</label>
+          <select id="setting-provider" class="form-control">
+            <option value="tokenharbor">TokenHarbor (Unified AI)</option>
+            <option value="apinex">APInex (Unified AI &amp; Tools)</option>
+            <option value="deepseek">DeepSeek (Official API)</option>
+            <option value="gemini">Google Gemini (API)</option>
+            <option value="openai">OpenAI (ChatGPT / GPT-4o)</option>
+            <option value="anthropic">Anthropic (Claude via OpenRouter)</option>
+            <option value="openrouter">OpenRouter (Unified API)</option>
+            <option value="ollama">Local Ollama (Offline Engine)</option>
+            <option value="custom">Custom OpenAI-Compatible Endpoint</option>
+          </select>
+        </div>
+
+        <!-- Endpoint URL -->
+        <div class="form-group">
+          <label for="setting-base-url">API Endpoint URL</label>
+          <input type="url" id="setting-base-url" class="form-control" value="https://api.deepseek.com/chat/completions">
+          <small id="setting-base-url-hint">Base URL (e.g., https://tokenharbor.ai/v1 or https://api.deepseek.com/chat/completions). SmartTalk automatically appends /chat/completions.</small>
+        </div>
+
+        <!-- API Key -->
+        <div class="form-group">
+          <label for="setting-api-key">API Key</label>
+          <input type="password" id="setting-api-key" class="form-control" placeholder="API key (sk-... or thk_live_...)" autocomplete="off">
+          <small>Stored securely across disk and local storage. Never transmitted to third parties.</small>
+        </div>
+
+        <!-- Model Selection / Custom model -->
+        <div class="form-group">
+          <label for="setting-model-select">Model Name</label>
+          <div style="display: flex; gap: 8px;">
+            <select id="setting-model-select" class="form-control" style="flex: 1;">
+              <!-- DeepSeek models -->
+              <optgroup label="DeepSeek Official">
+                <option value="deepseek-chat">deepseek-chat (V3)</option>
+                <option value="deepseek-reasoner">deepseek-reasoner (R1 Reasoning)</option>
+                <option value="deepseek-v4-flash">deepseek-v4-flash (V4 Flash)</option>
+                <option value="deepseek-v4-pro">deepseek-v4-pro (V4 Pro)</option>
+                <option value="deepseek-v4.1-flash">deepseek-v4.1-flash (V4.1 Flash)</option>
+                <option value="deepseek-v4.1-pro">deepseek-v4.1-pro (V4.1 Pro)</option>
+                <option value="deepseek-v4">deepseek-v4</option>
+                <option value="deepseek-v4.1">deepseek-v4.1</option>
+              </optgroup>
+              <!-- TokenHarbor models -->
+              <optgroup label="TokenHarbor (Standing Free Tier)">
+                <option value="deepseek-v4.1-flash:free">deepseek-v4.1-flash:free (Standing Free Tier)</option>
+                <option value="qwen3.8-flash:free">qwen3.8-flash:free (Standing Free Tier)</option>
+                <option value="mimo-v2.6-flash:free">mimo-v2.6-flash:free (Standing Free Tier)</option>
+              </optgroup>
+              <optgroup label="TokenHarbor (Paid Tier)">
+                <option value="deepseek-v4.1-flash">deepseek-v4.1-flash (Paid)</option>
+                <option value="deepseek-v4.1-pro">deepseek-v4.1-pro (Paid)</option>
+                <option value="claude-opus-5.5">claude-opus-5.5 (Paid)</option>
+                <option value="claude-sonnet-5.5">claude-sonnet-5.5 (Paid)</option>
+              </optgroup>
+              <!-- APInex Standard Models (Pay-as-you-go Balance / Recommended) -->
+              <optgroup label="APInex — Standard Models (1M Context - No Check-in Needed)">
+                <option value="deepseek-v4.1-flash">deepseek-v4.1-flash (Default - 1M Context)</option>
+                <option value="deepseek-v4-flash">deepseek-v4-flash (Fast - 1M Context)</option>
+                <option value="deepseek-v4-pro">deepseek-v4-pro (High Intelligence - 1M Context)</option>
+                <option value="gemini-3.8-flash">gemini-3.8-flash (Gemini - 1M Context)</option>
+                <option value="gemini-3.1-pro">gemini-3.1-pro (Gemini Pro - 1M Context)</option>
+                <option value="gpt-5.6-terra">gpt-5.6-terra (APInex Flagship - 1M Context)</option>
+                <option value="claude-sonnet-5.5">claude-sonnet-5.5 (Claude Sonnet - 1M Context)</option>
+                <option value="claude-opus-5.5">claude-opus-5.5 (Claude Opus - 1M Context)</option>
+                <option value="claude-opus-5">claude-opus-5 (1M Context)</option>
+                <option value="claude-fable-5.1">claude-fable-5.1 (1M Context)</option>
+                <option value="gpt-6-luna">gpt-6-luna (1M Context)</option>
+                <option value="gpt-6.1-sol">gpt-6.1-sol (1M Context)</option>
+                <option value="gpt-6-astra">gpt-6-astra (1M Context)</option>
+                <option value="grok-4.7">grok-4.7 (500K Context)</option>
+                <option value="glm-5.3-flash">glm-5.3-flash (1M Context)</option>
+                <option value="glm-5.3">glm-5.3 (1M Context)</option>
+                <option value="kimi-k3">kimi-k3 (1M Context)</option>
+              </optgroup>
+              <!-- APInex Image Generation Models -->
+              <optgroup label="APInex — Image Generation Models">
+                <option value="grok-imagine-2">grok-imagine-2 (xAI Grok Imagine)</option>
+                <option value="nano-banana-2">nano-banana-2 (Gemini Image)</option>
+                <option value="free/nano-banana-2">free/nano-banana-2 (Free Image Model)</option>
+                <option value="gpt-image-2.5-flare">gpt-image-2.5-flare (OpenAI Flare)</option>
+                <option value="gpt-image-2.5-sunburst">gpt-image-2.5-sunburst (OpenAI Sunburst)</option>
+                <option value="seedream-5">seedream-5 (Seedance Image)</option>
+              </optgroup>
+              <!-- APInex Free Models (Daily Check-in Required) -->
+              <optgroup label="APInex — Free Models (Requires Daily Check-in)">
+                <option value="free/deepseek-v4.1-flash">free/deepseek-v4.1-flash (Daily Quest Check-in)</option>
+                <option value="free/gpt-6-luna">free/gpt-6-luna (Daily Quest Check-in)</option>
+                <option value="free/glm-5.3-flash">free/glm-5.3-flash (Daily Quest Check-in)</option>
+                <option value="free/deepseek-v4-pro-0813">free/deepseek-v4-pro-0813 (Daily Quest Check-in)</option>
+                <option value="free/mimo-v2.6-pro">free/mimo-v2.6-pro (Daily Quest Check-in)</option>
+              </optgroup>
+              <!-- APInex Subscription-Gated Models -->
+              <optgroup label="APInex — Subscription Models (Requires Sub)">
+                <option value="free/gemini-3.8-flash">free/gemini-3.8-flash (Subscription Required)</option>
+                <option value="free/gemini-3.1-pro">free/gemini-3.1-pro (Subscription Required)</option>
+                <option value="free/claude-sonnet-4.6">free/claude-sonnet-4.6 (Subscription Required)</option>
+                <option value="free/claude-opus-4.6">free/claude-opus-4.6 (Subscription Required)</option>
+                <option value="free/qwen-3.8-max">free/qwen-3.8-max (Subscription Required)</option>
+                <option value="free/deepseek-v4-flash-0731">free/deepseek-v4-flash-0731 (Subscription Required)</option>
+                <option value="free/kimi-k3">free/kimi-k3 (Subscription Required)</option>
+              </optgroup>
+              <!-- Google Gemini models -->
+              <optgroup label="Google Gemini">
+                <option value="gemini-1.5-flash">gemini-1.5-flash (Fast &amp; lightweight - 1M)</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro (High intelligence - 2M)</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash (Next-gen speed - 1M)</option>
+                <option value="gemini-2.0-pro-exp-02-05">gemini-2.0-pro (Experimental - 2M)</option>
+              </optgroup>
+              <!-- OpenAI models -->
+              <optgroup label="OpenAI">
+                <option value="gpt-4o">gpt-4o (Omni flagship - 128K)</option>
+                <option value="gpt-4o-mini">gpt-4o-mini (Fast reasoning - 128K)</option>
+                <option value="o3-mini">o3-mini (Reasoning - 128K)</option>
+              </optgroup>
+              <!-- Anthropic Claude -->
+              <optgroup label="Anthropic (via OpenRouter)">
+                <option value="anthropic/claude-3.5-sonnet">claude-3.5-sonnet (High capability - 200K)</option>
+                <option value="anthropic/claude-3.5-haiku">claude-3.5-haiku (Lightning fast - 200K)</option>
+              </optgroup>
+              <!-- Local Ollama -->
+              <optgroup label="Local Ollama">
+                <option value="deepseek-r1:8b">deepseek-r1:8b</option>
+                <option value="llama3.2:latest">llama3.2:latest</option>
+              </optgroup>
+              <option value="custom">Enter custom model name...</option>
+            </select>
+            <input type="text" id="setting-model-custom" class="form-control" placeholder="e.g. claude-opus-5 or deepseek-v4.1-flash" style="display: none; flex: 1;">
+          </div>
+          <small>Select from TokenHarbor, APInex (1M Context), DeepSeek, Gemini, OpenAI, Claude, or custom.</small>
+        </div>
+
+        <!-- Temperature & Top-P -->
+        <div class="form-row">
+          <div class="form-group">
+            <label for="setting-temperature">Temperature (<span id="temp-val-display">0.7</span>)</label>
+            <input type="range" id="setting-temperature" min="0" max="2" step="0.1" value="0.7">
+          </div>
+          <div class="form-group">
+            <label for="setting-top-p">Top-P (<span id="topp-val-display">1.0</span>)</label>
+            <input type="range" id="setting-top-p" min="0" max="1" step="0.05" value="1.0">
+          </div>
+        </div>
+
+        <!-- Context Window Limit -->
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label for="setting-max-tokens" style="margin-bottom: 0;">Context Window Limit (Tokens)</label>
+            <span id="context-window-badge" style="font-size: 0.78rem; background: var(--bg-tertiary); padding: 2px 8px; border-radius: 12px; color: var(--accent-primary); border: 1px solid var(--border-color); font-weight: 500;">1,000,000 tokens (1M max)</span>
+          </div>
+          <input type="number" id="setting-max-tokens" class="form-control" value="1000000" min="2000" max="2000000" step="10000">
+          <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center; flex-wrap: wrap;">
+            <small style="flex: 1;">Matched with model context limits (1,000,000 for APInex/Gemini; 128,000 for OpenAI/TokenHarbor).</small>
+            <div style="display: flex; gap: 4px;">
+              <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="document.getElementById('setting-max-tokens').value=1000000; document.getElementById('setting-max-tokens').dispatchEvent(new Event('input'));">1M (Max)</button>
+              <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="document.getElementById('setting-max-tokens').value=128000; document.getElementById('setting-max-tokens').dispatchEvent(new Event('input'));">128K</button>
+              <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="document.getElementById('setting-max-tokens').value=64000; document.getElementById('setting-max-tokens').dispatchEvent(new Event('input'));">64K</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Prompt -->
+        <div class="form-group">
+          <label for="setting-system-prompt">System Prompt</label>
+          <textarea id="setting-system-prompt" class="form-control" rows="3">You are SmartTalk, a knowledgeable, concise, and helpful conversational AI assistant. You answer thoroughly with structured formatting, clear hierarchical markdown headings (use ## and ### where appropriate to structure your responses for readability and screen readers), clear code blocks, and precise explanations.</textarea>
+        </div>
+        <!-- Voice & Audio Accessibility Settings -->
+        <div class="form-group" style="border-top: 1px solid var(--border-color); padding-top: 14px; margin-top: 14px;">
+          <label style="font-weight: 600; color: var(--accent-primary);">Voice &amp; Speech (Accessibility)</label>
+          <div class="form-row">
+            <div class="form-group" style="flex: 2;">
+              <label for="setting-voice-select">Read Aloud Voice</label>
+              <select id="setting-voice-select" class="form-control">
+                <option value="default">Default System Voice</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label for="setting-voice-rate">Speech Rate (<span id="voice-rate-val">1.0x</span>)</label>
+              <input type="range" id="setting-voice-rate" min="0.6" max="1.8" step="0.1" value="1.0">
+            </div>
+          </div>
+          <small>Uses browser-native Web Speech API. Click 'Read Aloud' on any message or press Alt+M to speak prompts.</small>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-cancel-settings" class="btn btn-secondary" type="button" onclick="window.smartTalk ? window.smartTalk.closeSettingsModal() : (function(){ var m = document.getElementById('settings-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">Close</button>
+        <button id="btn-test-connection" class="btn btn-secondary" type="button">Test Connection</button>
+        <button id="btn-save-settings" class="btn btn-primary" type="button">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Delete Modal Dialog -->
+  <div class="modal-overlay" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" style="display: none;">
+    <div class="modal-dialog" style="max-width: 420px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="confirm-modal-title">Delete Conversation</h2>
+        <button class="icon-btn modal-close-btn" id="btn-close-confirm" aria-label="Cancel deletion" onclick="window.smartTalk ? window.smartTalk.closeConfirmModal() : (function(){ var m = document.getElementById('confirm-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete this conversation? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-delete" class="btn btn-secondary" type="button" onclick="window.smartTalk ? window.smartTalk.closeConfirmModal() : (function(){ var m = document.getElementById('confirm-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">Cancel</button>
+        <button id="btn-confirm-delete" class="btn btn-danger" type="button">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename Modal Dialog -->
+  <div class="modal-overlay" id="rename-modal" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title" style="display: none;">
+    <div class="modal-dialog" style="max-width: 420px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="rename-modal-title">Rename Conversation</h2>
+        <button class="icon-btn modal-close-btn" id="btn-close-rename" aria-label="Cancel rename" onclick="window.smartTalk ? window.smartTalk.closeRenameModal() : (function(){ var m = document.getElementById('rename-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="rename-input">Conversation Title</label>
+          <input type="text" id="rename-input" class="form-control" maxlength="60" autocomplete="off">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-rename" class="btn btn-secondary" type="button" onclick="window.smartTalk ? window.smartTalk.closeRenameModal() : (function(){ var m = document.getElementById('rename-modal'); if (m) { m.classList.remove('active'); m.style.display='none'; } })()">Cancel</button>
+        <button id="btn-confirm-rename" class="btn btn-primary" type="button">Save Title</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic Modules -->
+  <script src="api.js?v=4.1"></script>
+  <script src="file-scanner.js?v=4.1"></script>
+  <script src="app.js?v=4.1"></script>
+</body>
+</html>

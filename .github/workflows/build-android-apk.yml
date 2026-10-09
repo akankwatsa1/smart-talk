@@ -1,0 +1,115 @@
+name: Build Android APK
+
+# The build runs here, on GitHub's machines, not on the developer's laptop.
+#
+# Produces an installable APK on every push, and PROVES the artefact rather than
+# merely asserting it: apksigner verifies the signature, aapt dumps the manifest,
+# and a SHA-256 checksum is published so a bad download is provable.
+#
+# Signing: if the four SMARTTALK_* secrets are present this builds a signed
+# RELEASE apk using the frozen keystore, so its signature matches the app already
+# installed on the phone and it updates in place. Without those secrets it falls
+# back to a DEBUG apk (package com.smarttalk.app.debug, debug key) so the
+# workflow is never broken by a missing secret. A debug build is a SEPARATE app
+# and will not update the release install.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'android/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install the pinned SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Restore the release keystore (only if the secrets exist)
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SMARTTALK_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SMARTTALK_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SMARTTALK_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SMARTTALK_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No keystore secret found, so this run builds a DEBUG apk."
+            echo "::warning::A debug apk is a separate package and will NOT update an installed release build."
+            echo "have_key=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore/smarttalk-release.jks
+          {
+            echo "storeFile=keystore/smarttalk-release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+          echo "have_key=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build the release APK
+        if: steps.keystore.outputs.have_key == 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Build the debug APK
+        if: steps.keystore.outputs.have_key != 'true'
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Fail if no APK was produced
+        run: |
+          set -e
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK was produced."
+            exit 1
+          fi
+          echo "APK=$APK" >> "$GITHUB_ENV"
+          ls -l "$APK"
+
+      - name: Verify the signature and print the certificate
+        run: |
+          set -e
+          apksigner verify --verbose --print-certs "$APK"
+          echo "Certificate SHA-256 must match the frozen keystore:"
+          echo "  446547CCC59207D6E7A80A292218E772DEEBEF53D6524672AF9ED13ADABBC2F1"
+
+      - name: Dump the manifest
+        run: |
+          aapt dump badging "$APK" | grep -E '^package:|^sdkVersion:|^targetSdkVersion:|^native-code'
+
+      - name: Publish the checksum
+        run: sha256sum "$APK" | tee checksum.txt
+
+      - name: Upload the APK and its checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: smarttalk-apk
+          path: |
+            android/app/build/outputs/apk/**/*.apk
+            android/checksum.txt
+          if-no-files-found: error

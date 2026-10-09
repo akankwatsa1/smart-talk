@@ -1,0 +1,38 @@
+# Build outputs and packaged binaries: large, regenerable, not source.
+dist/
+build/
+*.exe
+*.pyc
+__pycache__/
+
+# Android build outputs and machine-local toolchain (SDK is ~400 MB).
+android/build/
+android/.gradle/
+android/app/build/
+android/tools/
+android/gradle-home/
+android/local.properties
+android/.kotlin/
+android/build-log.txt
+
+# Signing material. The Android keystore signs every future update, so it is
+# backed up outside git rather than committed to a public repository.
+# Anyone holding it could sign an APK Android would accept as a real update.
+# See android/README.md for the backup and restore procedure.
+android/keystore/
+android/keystore-backup/
+android/keystore.properties
+*.jks
+*.keystore
+
+# Credentials. Never commit a live API key: settings.json holds one.
+settings.json
+.env
+*.token
+
+# Editor and OS noise
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+captures/

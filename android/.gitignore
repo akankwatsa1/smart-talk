@@ -1,0 +1,31 @@
+# Build outputs
+build/
+.gradle/
+app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+build-log.txt
+
+# Toolchain is machine-local and large: never commit it.
+tools/
+gradle-home/
+
+# Keystore material. The keystore itself is backed up deliberately, outside git,
+# because this repository is public. See README for the backup procedure.
+keystore/
+keystore-backup/
+keystore.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+captures/
+
+# Kotlin
+.kotlin/

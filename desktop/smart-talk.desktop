@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SmartTalk
+Comment=Desktop-first conversational AI powered by DeepSeek & Multi-Providers
+Exec=electron %k/main.js
+Icon=smart-talk
+Terminal=false
+Type=Application
+Categories=Utility;Network;
+StartupNotify=true

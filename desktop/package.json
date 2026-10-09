@@ -1,0 +1,38 @@
+{
+  "name": "smart-talk",
+  "version": "1.0.0",
+  "description": "SmartTalk - Desktop First Conversational AI powered by DeepSeek & Multi-Providers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux"
+  },
+  "keywords": [
+    "ai",
+    "conversational-ai",
+    "deepseek",
+    "gemini",
+    "electron",
+    "desktop-app"
+  ],
+  "author": "SmartTalk Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.smarttalk.app",
+    "productName": "SmartTalk",
+    "win": {
+      "target": "nsis",
+      "icon": "../assets/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "../assets/icon.png",
+      "category": "Utility"
+    }
+  }
+}
