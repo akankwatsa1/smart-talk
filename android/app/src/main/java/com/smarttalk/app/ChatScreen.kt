@@ -2,9 +2,13 @@ package com.smarttalk.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,14 +19,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,6 +36,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +49,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -65,6 +71,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
 
 @Composable
 fun ChatScreen(
@@ -77,7 +85,10 @@ fun ChatScreen(
     var showChats by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Conversation?>(null) }
     var listening by remember { mutableStateOf(false) }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
     val speech = remember { SpeechInput(context) }
+
+    // ------------------------------------------------------------ launchers
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -92,8 +103,36 @@ fun ChatScreen(
         }
     }
 
-    // Follow new messages. Keyed on count alone: keying on the streaming text too
-    // would fight a user who scrolls up to read while an answer is still arriving.
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.attach(it) } }
+
+    val folderPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri -> uri?.let { vm.scanFolder(it) } }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { saved ->
+        if (saved) cameraUri?.let { vm.capturePhoto(it) }
+    }
+
+    fun takePhoto() {
+        // The camera writes into a file this app owns, handed over as a
+        // FileProvider URI. Writing straight to a file:// path would be refused
+        // on modern Android.
+        val file: File = vm.newCameraFile()
+        val uri = runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.getOrNull()
+        if (uri == null) {
+            vm.dismissError()
+            return
+        }
+        cameraUri = uri
+        cameraLauncher.launch(uri)
+    }
+
     LaunchedEffect(vm.conversation.messages.size) {
         if (vm.conversation.messages.isNotEmpty()) {
             listState.animateScrollToItem(vm.conversation.messages.size - 1)
@@ -143,7 +182,9 @@ fun ChatScreen(
                         MessageBubble(
                             message = message,
                             isStreaming = vm.isStreaming &&
-                                message.id == vm.conversation.messages.lastOrNull()?.id
+                                message.id == vm.conversation.messages.lastOrNull()?.id,
+                            isSpeaking = vm.speakingMessageId == message.id,
+                            onToggleSpeak = { vm.toggleSpeak(message) }
                         )
                     }
                 }
@@ -166,6 +207,24 @@ fun ChatScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        vm.lastNotice?.let { notice ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { vm.dismissNotice() }) { Text("OK") }
             }
         }
 
@@ -194,11 +253,41 @@ fun ChatScreen(
 
         HorizontalDivider()
 
+        // ---------------------------------------------------- staged attachments
+        if (vm.pendingAttachments.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Attached to your next message:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { vm.clearAttachments() }) { Text("Clear all") }
+                }
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    vm.pendingAttachments.forEachIndexed { index, attachment ->
+                        AttachmentChip(
+                            attachment = attachment,
+                            onRemove = { vm.removeAttachment(index) }
+                        )
+                    }
+                }
+            }
+        }
+
         // -------------------------------------------------------------- input
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             OutlinedTextField(
@@ -210,7 +299,9 @@ fun ChatScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(
                     onSend = {
-                        if (draft.isNotBlank() && !vm.isStreaming) {
+                        if ((draft.isNotBlank() || vm.pendingAttachments.isNotEmpty()) &&
+                            !vm.busy
+                        ) {
                             vm.send(draft)
                             draft = ""
                         }
@@ -218,49 +309,77 @@ fun ChatScreen(
                 )
             )
             Spacer(Modifier.width(8.dp))
-            Column {
-                if (vm.isStreaming) {
-                    Button(onClick = { vm.stop() }) { Text(stringResource(R.string.stop)) }
-                } else {
-                    Button(
-                        onClick = {
-                            if (draft.isNotBlank()) {
-                                vm.send(draft)
-                                draft = ""
-                            }
-                        },
-                        enabled = draft.isNotBlank()
-                    ) { Text(stringResource(R.string.send)) }
-                }
-                if (speech.isAvailable) {
-                    Spacer(Modifier.height(6.dp))
-                    TextButton(
-                        onClick = {
-                            if (listening) {
-                                speech.stop()
-                                listening = false
+            if (vm.busy) {
+                Button(onClick = { vm.stop() }) { Text(stringResource(R.string.stop)) }
+            } else {
+                Button(
+                    onClick = {
+                        vm.send(draft)
+                        draft = ""
+                    },
+                    enabled = draft.isNotBlank() || vm.pendingAttachments.isNotEmpty()
+                ) { Text(stringResource(R.string.send)) }
+            }
+        }
+
+        // -------------------------------------------------------- action strip
+        // Two rows, not one scrolling row. Six controls do not fit a narrow
+        // phone, and anything scrolled off the edge is effectively invisible on
+        // a touch device - there is no hover and no scrollbar to hint at it.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (speech.isAvailable) {
+                TextButton(
+                    onClick = {
+                        if (listening) {
+                            speech.stop()
+                            listening = false
+                        } else {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                listening = true
+                                speech.start(
+                                    onPartial = { draft = it },
+                                    onFinal = { draft = it; listening = false },
+                                    onError = { vm.dismissError(); listening = false }
+                                )
                             } else {
-                                val granted = ContextCompat.checkSelfPermission(
-                                    context,
-                                    Manifest.permission.RECORD_AUDIO
-                                ) == PackageManager.PERMISSION_GRANTED
-                                if (granted) {
-                                    listening = true
-                                    speech.start(
-                                        onPartial = { draft = it },
-                                        onFinal = { draft = it; listening = false },
-                                        onError = { vm.dismissError(); listening = false }
-                                    )
-                                } else {
-                                    micPermission.launch(Manifest.permission.RECORD_AUDIO)
-                                }
+                                micPermission.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         }
-                    ) {
-                        Text(if (listening) "Stop voice" else "Voice")
                     }
-                }
+                ) { Text(if (listening) "Stop voice" else "Voice") }
             }
+
+            TextButton(onClick = { filePicker.launch(ATTACH_MIME_TYPES) }) {
+                Text("Attach file")
+            }
+            TextButton(onClick = { takePhoto() }) { Text("Camera") }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = { folderPicker.launch(null) }) { Text("Scan folder") }
+            TextButton(
+                onClick = {
+                    if (draft.isNotBlank()) {
+                        vm.generateImage(draft)
+                        draft = ""
+                    }
+                },
+                enabled = draft.isNotBlank() && !vm.busy
+            ) { Text("Draw image") }
         }
 
         if (vm.isStreaming) {
@@ -334,6 +453,16 @@ fun ChatScreen(
     }
 }
 
+/** Types the document picker will show. Anything else is filtered out early. */
+private val ATTACH_MIME_TYPES = arrayOf(
+    "text/*",
+    "application/json",
+    "application/xml",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "image/*"
+)
+
 @Composable
 private fun EmptyState() {
     Column(
@@ -350,7 +479,8 @@ private fun EmptyState() {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-            text = stringResource(R.string.empty_state_body),
+            text = "Ask a question, attach a file, scan a folder, photograph a page, or " +
+                "describe an image to draw. Long answers can be read aloud.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -358,8 +488,74 @@ private fun EmptyState() {
 }
 
 @Composable
-private fun MessageBubble(message: ChatMessage, isStreaming: Boolean) {
-    val context = LocalContext.current
+private fun AttachmentChip(attachment: Attachment, onRemove: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = when (attachment.origin) {
+                    "camera" -> "Photo"
+                    "scan" -> "Scan"
+                    else -> "File"
+                } + ": " + attachment.displayName,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
+            )
+            TextButton(onClick = onRemove) { Text("Remove") }
+        }
+    }
+}
+
+/** Decode a local image at a sane size. Full-resolution photos would OOM. */
+@Composable
+private fun LocalImage(path: String, maxDimension: Int = 900, label: String) {
+    val bitmap = remember(path) {
+        runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            var sample = 1
+            var w = bounds.outWidth
+            var h = bounds.outHeight
+            while (w / 2 >= maxDimension && h / 2 >= maxDimension) {
+                w /= 2
+                h /= 2
+                sample *= 2
+            }
+            BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+        }.getOrNull()
+    }
+
+    if (bitmap == null) {
+        Text(
+            text = "[image no longer available on this device]",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    } else {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = label,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 320.dp)
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+        )
+    }
+}
+
+@Composable
+private fun MessageBubble(
+    message: ChatMessage,
+    isStreaming: Boolean,
+    isSpeaking: Boolean,
+    onToggleSpeak: () -> Unit
+) {
     val uriHandler = LocalUriHandler.current
     val isUser = message.role == Role.User
 
@@ -374,16 +570,15 @@ private fun MessageBubble(message: ChatMessage, isStreaming: Boolean) {
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val speaker = if (isUser) "You" else "SmartTalk"
-
-    val copiedNote = stringResource(R.string.copy_message)
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val copyLabel = stringResource(R.string.copy_message)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
                 customActions = listOf(
-                    CustomAccessibilityAction(copiedNote) {
+                    CustomAccessibilityAction(copyLabel) {
                         clipboard.setText(AnnotatedString(message.content))
                         true
                     }
@@ -400,14 +595,31 @@ private fun MessageBubble(message: ChatMessage, isStreaming: Boolean) {
             )
             Spacer(Modifier.height(6.dp))
 
+            // Images the user attached to this turn.
+            message.attachments.filter { it.kind == AttachmentKind.Image }
+                .forEach { attachment ->
+                    LocalImage(
+                        path = attachment.path,
+                        label = "Attached image: ${attachment.displayName}"
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+
+            // Images generated by the model in this turn.
+            if (message.generatedImages.isNotEmpty()) {
+                message.generatedImages.forEachIndexed { index, path ->
+                    LocalImage(path = path, label = "Generated image ${index + 1}")
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+
             if (message.content.isBlank() && isStreaming) {
-                // Announced once, politely, rather than on every token.
                 Text(
                     text = stringResource(R.string.thinking) + "\u2026",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
                 )
-            } else {
+            } else if (message.content.isNotBlank()) {
                 MarkdownContent(
                     text = message.content,
                     textColor = onContainer,
@@ -460,6 +672,14 @@ private fun MessageBubble(message: ChatMessage, isStreaming: Boolean) {
                             maxLines = 1
                         )
                     }
+                }
+            }
+
+            // Read aloud: only for answers with something worth hearing.
+            if (!isUser && message.content.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(onClick = onToggleSpeak) {
+                    Text(if (isSpeaking) "Stop reading" else "Read aloud")
                 }
             }
         }

@@ -1,25 +1,18 @@
 package com.smarttalk.app
 
 /**
- * A provider preset. These mirror the desktop app's providerConfigs block, but
- * deliberately carry NO API key: keys are typed by the user on the device and
- * stored only in this app's private storage.
+ * A provider preset, used as a starting template when creating an account.
+ *
+ * These mirror the desktop app's providerConfigs block but carry NO API key:
+ * keys are typed by the user on the device and stored only in this app's
+ * private storage.
  */
 data class ProviderConfig(
     val id: String,
     val label: String,
     val baseUrl: String,
     val model: String,
-    val maxTokens: Int,
-    val apiKey: String = ""
-)
-
-/** Per-provider user overrides, so switching providers remembers each key. */
-data class ProviderOverride(
-    val baseUrl: String? = null,
-    val apiKey: String? = null,
-    val model: String? = null,
-    val maxTokens: Int? = null
+    val maxTokens: Int
 )
 
 val BUILT_IN_PROVIDERS: List<ProviderConfig> = listOf(
@@ -95,33 +88,40 @@ const val DEFAULT_SYSTEM_PROMPT =
         "for readability and screen readers), clear code blocks, and precise explanations."
 
 /**
- * Everything the user can configure. Persisted as JSON in SharedPreferences.
+ * Model names offered as suggestions in Settings. These are hints, not a
+ * restriction: the field is free text, because gateways rename models
+ * constantly and a hard-coded list would rot within weeks.
  */
-data class AppSettings(
-    val providerId: String = "deepseek",
-    val overrides: Map<String, ProviderOverride> = emptyMap(),
-    val temperature: Double = 0.7,
-    val topP: Double = 1.0,
-    val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
-    val webSearchEnabled: Boolean = false,
-    val darkTheme: Boolean = true,
-    val maxSearchResults: Int = 5
-) {
-    /** The active provider with the user's overrides applied. */
-    fun activeProvider(): ProviderConfig {
-        val base = BUILT_IN_PROVIDERS.firstOrNull { it.id == providerId }
-            ?: BUILT_IN_PROVIDERS[0]
-        val o = overrides[providerId]
-        return base.copy(
-            baseUrl = o?.baseUrl?.takeIf { it.isNotBlank() } ?: base.baseUrl,
-            apiKey = o?.apiKey ?: base.apiKey,
-            model = o?.model?.takeIf { it.isNotBlank() } ?: base.model,
-            maxTokens = o?.maxTokens ?: base.maxTokens
-        )
-    }
+val SUGGESTED_CHAT_MODELS = listOf(
+    "deepseek-chat",
+    "deepseek-reasoner",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gemini-1.5-flash",
+    "anthropic/claude-3.5-sonnet",
+    "llama3.2:latest"
+)
 
-    fun overrideFor(id: String): ProviderOverride = overrides[id] ?: ProviderOverride()
+val SUGGESTED_VISION_MODELS = listOf(
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gemini-1.5-flash",
+    "anthropic/claude-3.5-sonnet",
+    "qwen2.5-vl-72b-instruct"
+)
 
-    fun withOverride(id: String, o: ProviderOverride): AppSettings =
-        copy(overrides = overrides + (id to o))
-}
+val SUGGESTED_IMAGE_MODELS = listOf(
+    "dall-e-3",
+    "gpt-image-1",
+    "flux-schnell",
+    "flux-dev",
+    "stable-diffusion-3.5-large",
+    "sdxl"
+)
+
+/**
+ * Image sizes offered by the generator. The API expects an explicit WxH string
+ * for most models, so these are the widely supported values rather than a free
+ * text field that would fail at request time.
+ */
+val IMAGE_SIZES = listOf("1024x1024", "1024x1792", "1792x1024", "512x512")

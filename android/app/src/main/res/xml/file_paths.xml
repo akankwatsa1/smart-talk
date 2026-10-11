@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths this app is willing to expose through its FileProvider. Only the private
+  media directory is shared, and only because the camera app must be able to
+  write the photo it captures into it.
+-->
+<paths>
+    <files-path
+        name="media"
+        path="media/" />
+</paths>
