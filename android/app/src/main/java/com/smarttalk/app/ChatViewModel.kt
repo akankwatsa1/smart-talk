@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
 
@@ -177,8 +178,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
             if (shouldSearch && question.isNotBlank() && !needsVision) {
                 statusText = "Searching the web"
+                // Relative dates are resolved BEFORE searching. A search engine
+                // cannot make sense of "yesterday": sent literally, Bing answered
+                // "yesterday's epl results" with Windows File Explorer pages.
+                val queries = search.buildQueries(question, LocalDate.now())
                 val results = withContext(Dispatchers.IO) {
-                    runCatching { search.search(question, settings.maxSearchResults) }
+                    runCatching { search.search(queries, settings.maxSearchResults) }
                         .getOrDefault(emptyList())
                 }
                 sources = results
@@ -459,8 +464,20 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** Destructive, and only called after the UI has confirmed it. */
     fun deleteChat(id: String) {
         store.deleteConversation(id)
+        if (conversation.id == id) {
+            newChat()
+        } else {
+            // Keep the surviving chat on disk, so its media is not swept away.
+            store.saveConversation(conversation)
+        }
         savedChats = store.listConversations()
-        if (conversation.id == id) newChat()
+
+        // Reclaim disk: photos, scans and generated images belonging to the
+        // deleted chat are now referenced by nothing.
+        val stillPending = pendingAttachments.map { it.path }
+            .filter { it.isNotBlank() }
+            .toSet()
+        store.pruneOrphanedMedia(stillPending)
     }
 
     fun exportCurrentChat(): String = store.exportAsText(conversation)

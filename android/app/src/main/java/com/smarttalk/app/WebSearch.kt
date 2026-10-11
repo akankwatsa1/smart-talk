@@ -1,10 +1,13 @@
 package com.smarttalk.app
 
+import android.util.Base64
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /** One web result. */
@@ -33,34 +36,49 @@ data class PageContent(
 /**
  * Live web grounding.
  *
- * Three findings from probing the real endpoints drove this rewrite:
+ * Every rule below came from probing the real endpoints, and several exist
+ * because a plausible-looking implementation silently returned nothing:
  *
- *  1. DuckDuckGo Lite BLOCKS plain GET requests, answering HTTP 202 with an
- *     empty shell. It only returns results for a POSTed form. The previous
- *     implementation used GET, so this source was silently returning nothing at
- *     all - which is why questions needing current facts had no grounding.
- *  2. Sending only search-result SNIPPETS is not enough. Asked for a league
- *     table, snippets do not contain it and the model either guessed or refused.
- *  3. Wikipedia's plain-text extract API strips tables out entirely, so even a
- *     perfect Wikipedia lookup returned no standings. The HTML must be parsed
- *     and the table rows kept.
- *
- * So results are now retrieved by POST, the top pages are actually downloaded,
- * and tables survive as pipe-separated rows that a model can read.
+ *  1. DuckDuckGo Lite REJECTS plain GET, answering HTTP 202 with an empty shell.
+ *     It only answers a POSTed form. Worse, it blocks this kind of traffic after
+ *     a burst of queries, so it is treated as best-effort with a cooldown rather
+ *     than as the primary source.
+ *  2. Bing wraps every result in a click-tracking redirect
+ *     (`bing.com/ck/a?...&u=a1<base64>`). Fetching that redirect returns HTTP 204
+ *     with no body, so Bing looked useless until the `u=` parameter was decoded.
+ *  3. Search engines cannot resolve "yesterday". Sent literally, "yesterday's epl
+ *     results" made Bing return Windows File Explorer pages. Substituting the
+ *     resolved date turned the same question into relevant results.
+ *  4. Snippets are not answers, and Wikipedia's text-extract API strips tables
+ *     out entirely, so pages are downloaded and their tables preserved.
+ *  5. Top results are often unfetchable (sportytrader answers 403), so more
+ *     candidates are tried than are needed and failures are skipped.
  */
 class WebSearch {
 
-    private val client = OkHttpClient.Builder()
+    private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
+    /** DuckDuckGo cooldown, so a blocking engine is not retried on every turn. */
+    private var duckDuckGoBlockedUntil = 0L
+
     // ---------------------------------------------------------------- searching
 
-    fun search(query: String, limit: Int, perSource: Int = 6): List<SearchResult> {
-        val q = query.trim()
-        if (q.isEmpty()) return emptyList()
+    fun search(query: String, limit: Int, perSource: Int = 6): List<SearchResult> =
+        search(listOf(query), limit, perSource)
+
+    /**
+     * Search every query in [queries] and merge the results in order.
+     *
+     * More than one query is normal: the literal question, plus a date-anchored
+     * variant when the question uses a relative date.
+     */
+    fun search(queries: List<String>, limit: Int, perSource: Int = 6): List<SearchResult> {
+        val cleaned = queries.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (cleaned.isEmpty()) return emptyList()
 
         val combined = ArrayList<SearchResult>()
         val seen = HashSet<String>()
@@ -73,18 +91,50 @@ class WebSearch {
             }
         }
 
-        val news = attempt { searchGoogleNews(q, 3) }
-        val ddg = attempt { searchDuckDuckGo(q, perSource) }
-        val bing = attempt { searchBing(q, perSource) }
+        for (q in cleaned) {
+            // News is timeliest, then the two general engines interleaved, so a
+            // single blocked source cannot starve the model of context.
+            addAll(attempt { searchGoogleNews(q, 3) })
+            addAll(
+                interleave(
+                    attempt { searchDuckDuckGo(q, perSource) },
+                    attempt { searchBing(q, perSource) }
+                )
+            )
+            if (combined.size >= limit) break
+        }
 
-        // News first (timeliest), then the two general engines interleaved, so a
-        // single blocked source cannot starve the model of context.
-        addAll(news)
-        addAll(interleave(ddg, bing))
-
-        if (combined.size < 3) addAll(attempt { searchWikipedia(q, 3) })
+        if (combined.size < 3) addAll(attempt { searchWikipedia(cleaned.first(), 3) })
 
         return combined.take(limit)
+    }
+
+    /**
+     * Build the queries sent to the engines.
+     *
+     * A search engine cannot resolve "yesterday", so the resolved date is
+     * substituted as well as the original question being sent unchanged.
+     */
+    fun buildQueries(question: String, today: LocalDate): List<String> {
+        val q = question.trim()
+        if (q.isEmpty()) return emptyList()
+
+        val relative = listOf(
+            "yesterday" to today.minusDays(1),
+            "last night" to today.minusDays(1),
+            "last week" to today.minusDays(7),
+            "today" to today,
+            "tonight" to today,
+            "this morning" to today,
+            "tomorrow" to today.plusDays(1)
+        )
+
+        for ((word, date) in relative) {
+            val pattern = Regex("(?i)\\b" + Regex.escape(word) + "\\b")
+            if (!pattern.containsMatchIn(q)) continue
+            return listOf(q, pattern.replace(q, date.format(LONG_DATE))).distinct()
+        }
+        return listOf(q)
     }
 
     private inline fun attempt(block: () -> List<SearchResult>): List<SearchResult> =
@@ -102,10 +152,12 @@ class WebSearch {
     }
 
     /**
-     * DuckDuckGo Lite. POST is required: the GET form is answered with HTTP 202
-     * and no results, which is the bug this method exists to avoid repeating.
+     * DuckDuckGo Lite, by POST. GET is answered with HTTP 202 and no results,
+     * and repeated queries earn a block, so a cooldown is applied afterwards.
      */
     private fun searchDuckDuckGo(query: String, limit: Int): List<SearchResult> {
+        if (System.currentTimeMillis() < duckDuckGoBlockedUntil) return emptyList()
+
         val body = FormBody.Builder().add("q", query).build()
         val request = Request.Builder()
             .url("https://lite.duckduckgo.com/lite/")
@@ -118,20 +170,23 @@ class WebSearch {
             .header("Referer", "https://lite.duckduckgo.com/")
             .build()
 
-        val html = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            response.body?.string().orEmpty()
+        val response = client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) {
+                // 202 means "go away": back off rather than hammering it.
+                if (r.code == 202) {
+                    duckDuckGoBlockedUntil = System.currentTimeMillis() + DDG_COOLDOWN_MS
+                }
+                return emptyList()
+            }
+            r.body?.string().orEmpty()
         }
-        if (html.isBlank()) return emptyList()
+        if (response.isBlank()) return emptyList()
 
         val results = ArrayList<SearchResult>()
-
-        val anchors = Regex(
+        for (match in Regex(
             "<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        ).findAll(html)
-
-        for (match in anchors) {
+        ).findAll(response)) {
             if (results.size >= limit) break
             var href = match.groupValues[1]
             val title = decodeEntities(stripTags(match.groupValues[2]))
@@ -143,31 +198,31 @@ class WebSearch {
                 href = Regex("uddg=([^&]+)").find(href)?.groupValues?.get(1)
                     ?.let { urlDecode(it) } ?: href
             }
-            results.add(
-                SearchResult(
-                    title = title,
-                    snippet = "",
-                    url = href,
-                    source = domainOf(href).ifBlank { "Web" }
-                )
-            )
+            results.add(SearchResult(title, "", href, domainOf(href).ifBlank { "Web" }))
+        }
+
+        if (results.isEmpty()) {
+            duckDuckGoBlockedUntil = System.currentTimeMillis() + DDG_COOLDOWN_MS
+            return emptyList()
         }
 
         // Snippets sit in following rows; attach them where the markup allows.
-        if (results.isNotEmpty()) {
-            val snippetRows = Regex(
-                "class=[\"'][^\"']*result-snippet[^\"']*[\"'][^>]*>(.*?)</td>",
-                setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-            ).findAll(html).map { decodeEntities(stripTags(it.groupValues[1])) }.toList()
-            results.forEachIndexed { index, result ->
-                val snippet = snippetRows.getOrNull(index)
-                if (!snippet.isNullOrBlank()) results[index] = result.copy(snippet = snippet)
+        val snippetRows = Regex(
+            "class=[\"'][^\"']*result-snippet[^\"']*[\"'][^>]*>(.*?)</td>",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        ).findAll(response).map { decodeEntities(stripTags(it.groupValues[1])) }.toList()
+        results.forEachIndexed { index, result ->
+            snippetRows.getOrNull(index)?.takeIf { it.isNotBlank() }?.let {
+                results[index] = result.copy(snippet = it)
             }
         }
         return results
     }
 
-    /** Bing's HTML still parses reliably and is a useful second opinion. */
+    /**
+     * Bing, whose click-tracking redirects must be decoded before use.
+     * Fetching `bing.com/ck/a?...` directly returns HTTP 204 with no body.
+     */
     private fun searchBing(query: String, limit: Int): List<SearchResult> {
         val url = "https://www.bing.com/search?q=" + URLEncoder.encode(query, "UTF-8") + "&setlang=en"
         val request = Request.Builder()
@@ -177,17 +232,17 @@ class WebSearch {
             .get()
             .build()
 
-        val html = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            response.body?.string().orEmpty()
+        val html = client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return emptyList()
+            r.body?.string().orEmpty()
         }
 
+        val results = ArrayList<SearchResult>()
         val blocks = Regex(
             "<li class=[\"'][^\"']*b_algo[^\"']*[\"'][\\s\\S]*?(?=<li class=[\"'][^\"']*b_algo|</ol>)",
             RegexOption.IGNORE_CASE
         ).findAll(html)
 
-        val results = ArrayList<SearchResult>()
         for (block in blocks) {
             if (results.size >= limit) break
             val chunk = block.value
@@ -195,24 +250,39 @@ class WebSearch {
                 "<h2[^>]*>\\s*<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>",
                 setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
             ).find(chunk) ?: continue
-            val href = link.groupValues[1]
+
+            val href = decodeBingUrl(decodeEntities(link.groupValues[1])) ?: continue
             val title = decodeEntities(stripTags(link.groupValues[2]))
             if (!href.startsWith("http") || isNoiseUrl(href, "bing.com")) continue
             if (title.length < 3) continue
+
             val snippet = Regex(
                 "<p[^>]*>(.*?)</p>",
                 setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
             ).find(chunk)?.let { decodeEntities(stripTags(it.groupValues[1])) }.orEmpty()
-            results.add(
-                SearchResult(
-                    title = title,
-                    snippet = snippet,
-                    url = href,
-                    source = domainOf(href).ifBlank { "Web" }
-                )
-            )
+
+            results.add(SearchResult(title, snippet, href, domainOf(href).ifBlank { "Web" }))
         }
         return results
+    }
+
+    /**
+     * Turn a Bing tracking link back into the real destination.
+     * The target is the `u=` parameter: an "a1" marker plus base64url.
+     */
+    fun decodeBingUrl(href: String): String? {
+        if (!href.contains("bing.com/ck/a") && !href.contains("bing.com/ck/")) return href
+        val marker = href.indexOf("u=")
+        if (marker < 0) return null
+        var raw = href.substring(marker + 2).substringBefore('&')
+        raw = urlDecode(raw)
+        var encoded = if (raw.startsWith("a1")) raw.substring(2) else raw
+        encoded = encoded.replace('-', '+').replace('_', '/')
+        while (encoded.length % 4 != 0) encoded += "="
+        val decoded = runCatching {
+            String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8)
+        }.getOrNull() ?: return null
+        return if (decoded.startsWith("http")) decoded else null
     }
 
     private fun searchGoogleNews(query: String, limit: Int): List<SearchResult> {
@@ -225,9 +295,9 @@ class WebSearch {
             .get()
             .build()
 
-        val xml = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            response.body?.string().orEmpty()
+        val xml = client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return emptyList()
+            r.body?.string().orEmpty()
         }
         if (xml.isBlank()) return emptyList()
 
@@ -241,12 +311,7 @@ class WebSearch {
                 val source = stripTags(tag(item, "source"))
                 val desc = stripTags(tag(item, "description"))
                 if (title.isBlank() || link.isBlank()) return@mapNotNull null
-                SearchResult(
-                    title = title,
-                    snippet = desc.ifBlank { title },
-                    url = link,
-                    source = source.ifBlank { "News" }
-                )
+                SearchResult(title, desc.ifBlank { title }, link, source.ifBlank { "News" })
             }
             .toList()
     }
@@ -261,9 +326,9 @@ class WebSearch {
             .get()
             .build()
 
-        val json = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            response.body?.string().orEmpty()
+        val json = client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return emptyList()
+            r.body?.string().orEmpty()
         }
 
         return runCatching {
@@ -274,11 +339,11 @@ class WebSearch {
                 val title = item.optString("title")
                 if (title.isBlank()) return@mapNotNull null
                 SearchResult(
-                    title = title,
-                    snippet = stripTags(item.optString("snippet")),
-                    url = "https://en.wikipedia.org/wiki/" +
+                    title,
+                    stripTags(item.optString("snippet")),
+                    "https://en.wikipedia.org/wiki/" +
                         URLEncoder.encode(title.replace(' ', '_'), "UTF-8"),
-                    source = "Wikipedia"
+                    "Wikipedia"
                 )
             }
         }.getOrDefault(emptyList())
@@ -287,46 +352,62 @@ class WebSearch {
     // ------------------------------------------------------------- page fetching
 
     /**
-     * Download the top results so the model sees real content, not teasers.
-     * This is what makes a question like "the current league table" answerable.
+     * Download candidate pages until [maxPages] have succeeded.
+     *
+     * More candidates are tried than are needed because popular result pages are
+     * frequently unfetchable - sportytrader answers HTTP 403, and Bing's raw
+     * redirects answer 204 with no body. Skipping failures is what turns a search
+     * that found the right page into an answer that actually contains the facts.
      */
     fun fetchPages(
         results: List<SearchResult>,
         maxPages: Int,
         budgetChars: Int
     ): List<PageContent> {
+        if (maxPages <= 0) return emptyList()
         val out = ArrayList<PageContent>()
-        for (result in results.take(maxPages)) {
+        var attempted = 0
+        val attemptLimit = minOf(results.size, maxPages * 3)
+
+        for (result in results) {
+            if (out.size >= maxPages || attempted >= attemptLimit) break
             if (result.url.isBlank()) continue
-            val page = runCatching { fetchOne(result, budgetChars) }.getOrNull()
-            if (page != null && page.content.length > 200) out.add(page)
+            attempted++
+            val page = runCatching { fetchOne(result, budgetChars) }.getOrNull() ?: continue
+            if (page.content.length > 200) out.add(page)
         }
         return out
     }
 
     private fun fetchOne(result: SearchResult, budgetChars: Int): PageContent? {
+        val origin = runCatching {
+            val u = java.net.URI(result.url)
+            "${u.scheme}://${u.host}/"
+        }.getOrDefault("")
+
         val request = Request.Builder()
             .url(result.url)
             .header("User-Agent", DESKTOP_UA)
             .header("Accept", "text/html,application/xhtml+xml")
             .header("Accept-Language", "en-US,en;q=0.9")
+            .apply { if (origin.isNotBlank()) header("Referer", origin) }
             .get()
             .build()
 
-        val html = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val type = response.header("Content-Type").orEmpty()
+        val html = client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return null
+            val type = r.header("Content-Type").orEmpty()
             if (type.isNotEmpty() && !type.contains("html") && !type.contains("text") &&
                 !type.contains("json")
             ) {
                 return null
             }
-            response.body?.string().orEmpty()
+            r.body?.string().orEmpty()
         }
         if (html.isBlank()) return null
         val text = condense(extractReadableText(html), budgetChars)
         if (text.isBlank()) return null
-        return PageContent(url = result.url, title = result.title, content = text)
+        return PageContent(result.url, result.title, text)
     }
 
     /**
@@ -365,14 +446,9 @@ class WebSearch {
         s = decodeEntities(s)
 
         val lines = s.lines()
-            .map { line ->
-                line.replace(Regex("[\\u00A0\\t]+"), " ")
-                    .replace(Regex(" {2,}"), " ")
-                    .trim()
-            }
+            .map { line -> line.replace(Regex("[\\u00A0\\t]+"), " ").replace(Regex(" {2,}"), " ").trim() }
             .filter { it.length > 1 }
 
-        // Collapse runs of identical lines (common in menus and repeated headers).
         val prose = ArrayList<String>(lines.size)
         var previous = ""
         for (line in lines) {
@@ -390,11 +466,7 @@ class WebSearch {
         }.trim()
     }
 
-    /**
-     * Convert a table into one line per row. Exposed so it can be exercised
-     * directly: this is the function that decides whether a league table arrives
-     * readable or as a column of anonymous numbers.
-     */
+    /** Convert a table into one line per row. Exposed so it can be exercised directly. */
     fun convertTableToRows(tableHtml: String): List<String> {
         val out = ArrayList<String>()
         for (row in Regex("(?is)<tr[^>]*>.*?</tr>").findAll(tableHtml)) {
@@ -408,7 +480,6 @@ class WebSearch {
         return out
     }
 
-    /** One cell, flattened onto a single line however deeply it is nested. */
     private fun cellText(cellHtml: String): String {
         val withoutTags = cellHtml.replace(Regex("(?is)<[^>]+>"), " ")
         return decodeEntities(withoutTags).replace(Regex("\\s+"), " ").trim()
@@ -419,8 +490,7 @@ class WebSearch {
      *
      * Data rows (pipe-separated lines carrying digits) are kept in full, and the
      * opening prose fills whatever budget remains. Selection happens on a set of
-     * line numbers, then output preserves the page's original order so the text
-     * still reads coherently.
+     * line numbers, then output preserves the page's original order.
      */
     fun condense(text: String, budgetChars: Int): String {
         if (text.length <= budgetChars) return text
@@ -434,7 +504,6 @@ class WebSearch {
         val keep = HashSet<Int>()
         var used = 0
 
-        // 1. Every data row, up to 70% of the budget: tables are usually the answer.
         val rowBudget = (budgetChars * 0.7).toInt()
         for ((index, line) in lines.withIndex()) {
             if (!isDataRow(line)) continue
@@ -442,24 +511,23 @@ class WebSearch {
             keep.add(index)
             used += line.length
         }
-
-        // 2. Then the opening prose, which carries the context around the table.
         for ((index, line) in lines.withIndex()) {
             if (keep.contains(index)) continue
             if (used + line.length > budgetChars) break
             keep.add(index)
             used += line.length
         }
-
         return keep.sorted().joinToString("\n") { lines[it] }
     }
 
     // -------------------------------------------------------------- grounding
 
     /**
-     * Build the context block handed to the model. The date is stated explicitly
-     * because a model asked for "the current table" will otherwise answer from
-     * its training data and be confidently wrong.
+     * Build the context block handed to the model.
+     *
+     * The date is stated explicitly because a model asked for "the current table"
+     * will otherwise answer from its training data and be confidently wrong, and
+     * the formatting rules exist because a wall of pasted URLs is not an answer.
      */
     fun buildGrounding(
         results: List<SearchResult>,
@@ -490,12 +558,18 @@ class WebSearch {
                 }
                 appendLine()
             }
-            appendLine("Instructions for answering:")
-            appendLine("- Answer the question directly using the material above.")
-            appendLine("- When the material contains figures, tables or dates, quote them exactly.")
-            appendLine("- Do not say you lack current information if the answer is present above.")
-            appendLine("- If the material genuinely does not contain it, say so plainly and say")
-            appendLine("  that it could not be confirmed from today's sources.")
+            appendLine("How to answer:")
+            appendLine("- Answer the question directly from the material above.")
+            appendLine("- Analyse and summarise it in your own words. Do not dump the raw")
+            appendLine("  page text back at the user.")
+            appendLine("- Name your sources inside the sentences where they are used, for")
+            appendLine("  example \"According to BBC Sport, ...\". The app already shows the")
+            appendLine("  links underneath the answer, so NEVER paste a web address into the")
+            appendLine("  body of your reply.")
+            appendLine("- Quote figures, dates, scores and prices exactly as they appear.")
+            appendLine("- If the specific item asked about is not present but related current")
+            appendLine("  information is, give what you found and say clearly what is missing.")
+            appendLine("  Do not reply only that you do not know.")
         }
     }
 
@@ -527,6 +601,10 @@ class WebSearch {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         private const val USER_AGENT = "SmartTalk/1.0 (Android)"
+        private const val DDG_COOLDOWN_MS = 10 * 60 * 1000L
+
+        val ISO_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+        val LONG_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy")
 
         fun decodeEntities(input: String): String {
             var s = input
@@ -539,7 +617,6 @@ class WebSearch {
             s = s.replace("&hellip;", "...").replace("&rsquo;", "'").replace("&lsquo;", "'")
             s = s.replace("&ldquo;", "\"").replace("&rdquo;", "\"")
             s = s.replace("&pound;", "GBP").replace("&euro;", "EUR").replace("&deg;", " degrees")
-            // Numeric entities, so prices and symbols survive.
             s = Regex("&#(\\d{1,5});").replace(s) { m ->
                 val code = m.groupValues[1].toIntOrNull() ?: return@replace m.value
                 if (code in 1..0x10FFFF) String(Character.toChars(code)) else m.value

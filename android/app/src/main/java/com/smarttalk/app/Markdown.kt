@@ -207,3 +207,33 @@ fun extractUrls(source: String): List<String> {
     val found = Regex("https?://[^\\s)\\]]+").findAll(source).map { it.value.trimEnd('.', ',', ';', ':') }
     return found.distinct().toList()
 }
+
+/**
+ * Replace raw web addresses in an answer with a readable label.
+ *
+ * A reply that pastes bare URLs is not an analysis, and long addresses wreck the
+ * reading experience and are painful under TalkBack. Addresses that match a cited
+ * source become that source's name; anything else becomes its domain. The real,
+ * tappable links are rendered as buttons beneath the message, so nothing is lost.
+ */
+fun replaceUrlsWithLabels(text: String, sources: List<SearchResult>): String {
+    if (text.isEmpty() || !text.contains("http")) return text
+    val pattern = Regex("https?://[^\\s)\\]>]+")
+    return pattern.replace(text) { match ->
+        val withJunk = match.value
+        val clean = withJunk.trimEnd('.', ',', ';', ':', '!', '?')
+        val trailing = withJunk.removePrefix(clean)
+        val known = sources.firstOrNull {
+            it.url.trimEnd('/').equals(clean.trimEnd('/'), ignoreCase = true)
+        }
+        val label = known?.source?.takeIf { it.isNotBlank() }
+            ?: known?.title?.take(40)?.takeIf { it.isNotBlank() }
+            ?: domainLabel(clean)
+        "$label$trailing"
+    }
+}
+
+private fun domainLabel(url: String): String =
+    runCatching { java.net.URI(url).host?.removePrefix("www.").orEmpty() }
+        .getOrDefault("")
+        .ifBlank { "source" }

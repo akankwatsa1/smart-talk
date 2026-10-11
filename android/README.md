@@ -101,7 +101,43 @@ so on. *Always* searches every turn. *Off* never does. Downloading pages can be
 disabled, but it is what makes tables and figures accurate.
 
 `probes/` in this folder holds the probes used to establish all of this
-(`probe-search.mjs`, `probe-sources.mjs`, `probe-e2e.mjs`, `probe-tables.mjs`).
+(`probe-search.mjs`, `probe-sources.mjs`, `probe-e2e.mjs`, `probe-tables.mjs`,
+`probe-trigger.mjs`, `probe-results.mjs`, `probe-fetchable.mjs`,
+`probe-engines.mjs`, `probe-bingdecode.mjs`).
+
+### Four more defects found by asking for yesterday's EPL results
+
+That question still failed after the fixes above, for four further reasons. All
+four are now handled.
+
+**Bing's links are redirects.** Bing returns `bing.com/ck/a?...&u=a1<base64>` for
+every result. Fetching that redirect gives HTTP 204 with **no body**, so Bing
+appeared useless. The real destination is base64-encoded in the `u=` parameter;
+decoding it turned Bing from a dead source into a working one.
+
+**Search engines cannot resolve "yesterday".** Sent literally, "yesterday's epl
+results" made Bing return pages about *Windows File Explorer*. The app now
+resolves relative dates before searching and sends both the original question and
+a date-anchored version ("premier league results 10 October 2026"), which returned
+relevant results.
+
+**The best result is often unfetchable.** For that query the top hit was
+sportytrader, which answers HTTP 403. More candidates are now tried than are
+needed, up to three times the page budget, and the failures are skipped, so a
+search that *found* the right page becomes an answer that actually contains the
+facts.
+
+**DuckDuckGo blocks bursts.** After a run of queries it answers HTTP 202 with zero
+links even when spaced several seconds apart. It is therefore best-effort with a
+ten-minute cooldown rather than the primary source, and Bing carries the load.
+
+### How answers are presented
+
+The answer is analysed prose, not a paste of page text or a wall of URLs. Sources
+are named inside the sentences where they are used ("According to BBC Sport, ..."),
+and every real link is a button beneath the message. Any raw address that does
+reach the body is collapsed to the source name, so nothing unreadable is left in
+the text and nothing is lost from the citations.
 
 ---
 

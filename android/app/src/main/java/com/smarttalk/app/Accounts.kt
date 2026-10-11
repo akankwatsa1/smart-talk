@@ -146,11 +146,25 @@ private val TIME_SENSITIVE = listOf(
     "as of", "in 2025", "in 2026", "in 2027"
 )
 
+/**
+ * Whole-word patterns, deliberately not a substring test.
+ *
+ * A substring test looks harmless and is wrong: "now" occurs inside "know" and
+ * "knowledge", so "I don't know, explain recursion" used to fire a pointless web
+ * search and slow down every answer containing those words. Verified against a
+ * table of should-search and should-not-search cases.
+ */
+private val TIME_SENSITIVE_PATTERNS: List<Regex> = TIME_SENSITIVE.map { keyword ->
+    Regex("(?<![a-z])" + Regex.escape(keyword) + "(?![a-z])")
+}
+
+/** A bare four-digit year from 2024 onward usually means "tell me current facts". */
+private val RECENT_YEAR = Regex("\\b20(2[4-9]|[3-9]\\d)\\b")
+
 fun looksTimeSensitive(prompt: String): Boolean {
-    val p = " " + prompt.lowercase() + " "
-    if (TIME_SENSITIVE.any { it in p }) return true
-    // A bare four-digit year from 2024 onward is usually a request for current facts.
-    return Regex("\\b20(2[4-9]|[3-9]\\d)\\b").containsMatchIn(p)
+    val p = prompt.lowercase()
+    if (TIME_SENSITIVE_PATTERNS.any { it.containsMatchIn(p) }) return true
+    return RECENT_YEAR.containsMatchIn(p)
 }
 
 /**

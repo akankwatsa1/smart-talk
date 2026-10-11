@@ -573,6 +573,10 @@ private fun MessageBubble(
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val copyLabel = stringResource(R.string.copy_message)
 
+    val displayContent = remember(message.content, message.sources) {
+        if (isUser) message.content else replaceUrlsWithLabels(message.content, message.sources)
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -621,7 +625,9 @@ private fun MessageBubble(
                 )
             } else if (message.content.isNotBlank()) {
                 MarkdownContent(
-                    text = message.content,
+                    // Answers show source NAMES in the prose; the real links are
+                    // buttons underneath rather than pasted addresses.
+                    text = displayContent,
                     textColor = onContainer,
                     modifier = Modifier.fillMaxWidth()
                 )

@@ -182,8 +182,25 @@ class SmartTalkStore(private val context: Context) {
         runCatching { File(path).takeIf { it.exists() && it.parentFile == mediaDir }?.delete() }
     }
 
-    /** Remove media files no longer referenced by any saved conversation. */
-    fun pruneOrphanedMedia(referenced: Set<String>) {
+    /**
+     * Delete media files that no saved conversation still refers to.
+     *
+     * Attached photos, scans and generated images are real files in private
+     * storage. Without this sweep they accumulate for ever, because deleting a
+     * conversation only removes its JSON.
+     */
+    fun pruneOrphanedMedia(extraKeep: Set<String> = emptySet()) {
+        val referenced = HashSet(extraKeep)
+        listConversations().forEach { conversation ->
+            conversation.messages.forEach { message ->
+                message.attachments.forEach { attachment ->
+                    if (attachment.path.isNotBlank()) referenced.add(attachment.path)
+                }
+                message.generatedImages.forEach { path ->
+                    if (path.isNotBlank()) referenced.add(path)
+                }
+            }
+        }
         runCatching {
             mediaDir.listFiles()?.forEach { file ->
                 if (file.absolutePath !in referenced) file.delete()
